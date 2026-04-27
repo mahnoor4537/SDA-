@@ -81,14 +81,21 @@ def recommendations_page():
 def cineblend_page():
     return send_from_directory(BASE_DIR, "cinematch-cineblend.html")
 
-@app.route("/admin/login")
-def admin_login_page():
-    return send_from_directory(BASE_DIR, "cinematch-admin-login.html")
-
 @app.route("/admin/dashboard")
 def admin_dashboard_page():
     return send_from_directory(BASE_DIR, "cinematch-admin.html")
     @app.route("/setup-db")
+def setup_db():
+    import sqlite3, os
+    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    with open("script.sql", "r") as f:
+        sql = f.read()
+    conn = sqlite3.connect(db_path)
+    conn.executescript(sql)
+    conn.close()
+    return "Database initialized successfully!"
+
+@app.route("/setup-db")
 def setup_db():
     import sqlite3, os
     db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
