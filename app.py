@@ -7,6 +7,22 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 
+load_dotenv()
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def init_db():
+    import sqlite3
+    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    sql_path = os.path.join(BASE_DIR, "script.sql")
+    with open(sql_path, "r") as f:
+        sql = f.read()
+    conn = sqlite3.connect(db_path)
+    conn.executescript(sql)
+    conn.close()
+
+init_db()
+
 from auth            import auth_bp
 from movies          import movies_bp
 from ratings         import ratings_bp
@@ -19,10 +35,6 @@ from admin_auth      import admin_auth_bp
 from recommendations import recommendations_bp
 from community       import community_bp
 from cineblend       import cineblend_bp
-
-load_dotenv()
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
@@ -91,13 +103,7 @@ def admin_dashboard_page():
 
 @app.route("/setup-db")
 def setup_db():
-    import sqlite3, os
-    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
-    with open("script.sql", "r") as f:
-        sql = f.read()
-    conn = sqlite3.connect(db_path)
-    conn.executescript(sql)
-    conn.close()
+    init_db()
     return "Database initialized successfully!"
 
 if __name__ == "__main__":
