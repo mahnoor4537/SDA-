@@ -1,9 +1,9 @@
 """
 UC05 Managing Watchlist
-handles POST   /api/watchlist          = add a movie to watchlist
-         DELETE /api/watchlist/<movie_id> = remove a movie from watchlist
-         GET    /api/watchlist           = get all movies in user's watchlist
-         GET    /api/watchlist/<movie_id> = check if a specific movie is in watchlist
+handles POST   /api/watchlist              = add a movie to watchlist
+         DELETE /api/watchlist/<movie_id>   = remove a movie from watchlist
+         GET    /api/watchlist              = get all movies in user's watchlist
+         GET    /api/watchlist/check/<id>   = check if a specific movie is in watchlist
 """
 
 from flask import Blueprint, request, jsonify, session
@@ -18,11 +18,10 @@ def _login_required():
     return None
 
 
-# UC05 Add movie to watchlist 
+# ── UC05 Add movie to watchlist ────────────────────────────────────────────────
 
 @watchlist_bp.route("/watchlist", methods=["POST"])
 def add_to_watchlist():
-    
     err = _login_required()
     if err:
         return err
@@ -39,7 +38,6 @@ def add_to_watchlist():
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # check movie exists 
         cursor.execute(
             "SELECT MovieID FROM Movies WHERE MovieID = ? AND IsApproved = 1",
             (movie_id,)
@@ -48,7 +46,6 @@ def add_to_watchlist():
             conn.close()
             return jsonify({"success": False, "message": "Movie not found."}), 404
 
-        # check if already in watchlist 
         cursor.execute(
             "SELECT WatchlistID FROM Watchlist WHERE UserID = ? AND MovieID = ?",
             (user_id, movie_id)
@@ -56,14 +53,14 @@ def add_to_watchlist():
         if cursor.fetchone():
             conn.close()
             return jsonify({
-                "success": False,
-                "message": "Movie is already in your watchlist.",
+                "success":      False,
+                "message":      "Movie is already in your watchlist.",
                 "in_watchlist": True
             }), 200
 
-        # insert into watchlist 
+        # SQLite: datetime('now') instead of GETDATE()
         cursor.execute(
-            "INSERT INTO Watchlist (UserID, MovieID, AddedAt) VALUES (?, ?, GETDATE())",
+            "INSERT INTO Watchlist (UserID, MovieID, AddedAt) VALUES (?, ?, datetime('now'))",
             (user_id, movie_id)
         )
         conn.commit()
@@ -79,15 +76,10 @@ def add_to_watchlist():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# Remove movie from watchlist
+# ── Remove movie from watchlist ────────────────────────────────────────────────
 
 @watchlist_bp.route("/watchlist/<int:movie_id>", methods=["DELETE"])
 def remove_from_watchlist(movie_id: int):
-    """
-    Alternate Flow from UC-05:
-      User clicks the filled heart icon to remove a movie they already saved.
-      System deletes the Watchlist record for (UserID, MovieID).
-    """
     err = _login_required()
     if err:
         return err
@@ -115,11 +107,10 @@ def remove_from_watchlist(movie_id: int):
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# get user's full watchlist
+# ── Get user's full watchlist ──────────────────────────────────────────────────
 
 @watchlist_bp.route("/watchlist", methods=["GET"])
 def get_watchlist():
-   
     err = _login_required()
     if err:
         return err
@@ -138,7 +129,7 @@ def get_watchlist():
                    w.AddedAt
             FROM   Watchlist w
             JOIN   VW_MoviesComplete m ON w.MovieID = m.MovieID
-            WHERE  w.UserID    = ?
+            WHERE  w.UserID     = ?
             AND    m.IsApproved = 1
             ORDER  BY w.AddedAt DESC
             """,
@@ -147,22 +138,23 @@ def get_watchlist():
         rows = cursor.fetchall()
         conn.close()
 
+        # SQLite AddedAt is TEXT; slice to date
         movies = [
             {
-                "movie_id":       row.MovieID,
-                "title":          row.Title,
-                "release_year":   row.ReleaseYear,
-                "runtime":        row.Runtime,
-                "description":    row.Description,
-                "poster_url":     row.PosterURL,
-                "trailer_url":    row.TrailerURL,
-                "director":       row.Director,
-                "cast":           row.Cast,
-                "average_rating": float(row.AverageRating) if row.AverageRating else 0.0,
-                "total_ratings":  row.TotalRatings,
-                "genres":         row.Genres or "",
-                "platforms":      row.Platforms or "",
-                "added_at":       row.AddedAt.strftime("%Y-%m-%d") if row.AddedAt else "",
+                "movie_id":       row["MovieID"],
+                "title":          row["Title"],
+                "release_year":   row["ReleaseYear"],
+                "runtime":        row["Runtime"],
+                "description":    row["Description"],
+                "poster_url":     row["PosterURL"],
+                "trailer_url":    row["TrailerURL"],
+                "director":       row["Director"],
+                "cast":           row["Cast"],
+                "average_rating": float(row["AverageRating"]) if row["AverageRating"] else 0.0,
+                "total_ratings":  row["TotalRatings"],
+                "genres":         row["Genres"] or "",
+                "platforms":      row["Platforms"] or "",
+                "added_at":       str(row["AddedAt"])[:10] if row["AddedAt"] else "",
             }
             for row in rows
         ]
@@ -173,7 +165,7 @@ def get_watchlist():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# check if a specific movie is in user's watchlist 
+# ── Check if a specific movie is in user's watchlist ──────────────────────────
 
 @watchlist_bp.route("/watchlist/check/<int:movie_id>", methods=["GET"])
 def check_watchlist(movie_id: int):

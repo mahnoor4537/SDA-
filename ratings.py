@@ -1,7 +1,7 @@
 """
 UC03 Rating Movies
-handles: POST /api/ratings          = submit or update rating
-         GET  /api/ratings/<movie_id> = get all ratings for one movie
+handles: POST /api/ratings              = submit or update rating
+         GET  /api/ratings/<movie_id>   = get all ratings for one movie
          GET  /api/ratings/me/<movie_id> = get logged-in user's rating for a movie
 """
 
@@ -17,11 +17,10 @@ def _login_required():
     return None
 
 
-# UC03 Submit or update a rating 
+# ── UC03 Submit or update a rating ────────────────────────────────────────────
 
 @ratings_bp.route("/ratings", methods=["POST"])
 def submit_rating():
-
     err = _login_required()
     if err:
         return err
@@ -30,13 +29,11 @@ def submit_rating():
     movie_id = data.get("movie_id")
     rating   = data.get("rating")
 
-    # presence checks 
     if movie_id is None:
         return jsonify({"success": False, "message": "Movie ID is required."}), 400
     if rating is None:
         return jsonify({"success": False, "message": "Rating value is required."}), 400
 
-    # Validate rating range 
     try:
         rating = float(rating)
     except (ValueError, TypeError):
@@ -45,16 +42,13 @@ def submit_rating():
     if rating < 1.0 or rating > 5.0:
         return jsonify({"success": False, "message": "Rating must be between 1 and 5."}), 400
 
-    # Round to nearest 0.5 (half-star ratings)
-    rating = round(rating * 2) / 2
-
+    rating  = round(rating * 2) / 2
     user_id = session["user_id"]
 
     try:
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # Check movie exists
         cursor.execute(
             "SELECT MovieID FROM Movies WHERE MovieID = ? AND IsApproved = 1",
             (movie_id,)
@@ -63,25 +57,25 @@ def submit_rating():
             conn.close()
             return jsonify({"success": False, "message": "Movie not found."}), 404
 
-       
         cursor.execute(
             "SELECT RatingID FROM Ratings WHERE UserID = ? AND MovieID = ?",
             (user_id, movie_id)
         )
         existing = cursor.fetchone()
 
-        #if user already rated this movie
         if existing:
-            # TR_Ratings_UpdateMovieAverage trigger works on update rating automatically
+            # SQLite: datetime('now') instead of GETDATE()
             cursor.execute(
                 """
                 UPDATE Ratings
-                SET    RatingValue = ?, UpdatedAt = GETDATE()
+                SET    RatingValue = ?, UpdatedAt = datetime('now')
                 WHERE  UserID  = ?
                 AND    MovieID = ?
                 """,
                 (rating, user_id, movie_id)
             )
+            # Recalculate the movie's average rating (SQLite has no triggers for this)
+            _update_movie_average(cursor, movie_id)
             conn.commit()
             conn.close()
             return jsonify({
@@ -91,15 +85,15 @@ def submit_rating():
             }), 200
 
         else:
-            #if not already rated, then insert nayi
-            # TR_Ratings_UpdateMovieAverage trigger on insert as well.
+            # SQLite: datetime('now') instead of GETDATE()
             cursor.execute(
                 """
                 INSERT INTO Ratings (UserID, MovieID, RatingValue, RatedAt)
-                VALUES (?, ?, ?, GETDATE())
+                VALUES (?, ?, ?, datetime('now'))
                 """,
                 (user_id, movie_id, rating)
             )
+            _update_movie_average(cursor, movie_id)
             conn.commit()
             conn.close()
             return jsonify({
@@ -112,7 +106,30 @@ def submit_rating():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# logged-in user's rating for a specific movie 
+def _update_movie_average(cursor, movie_id: int):
+    """
+    Recalculate AverageRating and TotalRatings on the Movies table.
+    SQLite does not support stored procedures or DML triggers, so this
+    helper replaces the MSSQL TR_Ratings_UpdateMovieAverage trigger.
+    Call after every INSERT or UPDATE on Ratings.
+    """
+    cursor.execute(
+        """
+        UPDATE Movies
+        SET    AverageRating = (
+                   SELECT ROUND(AVG(CAST(RatingValue AS REAL)), 1)
+                   FROM   Ratings WHERE MovieID = ?
+               ),
+               TotalRatings  = (
+                   SELECT COUNT(*) FROM Ratings WHERE MovieID = ?
+               )
+        WHERE  MovieID = ?
+        """,
+        (movie_id, movie_id, movie_id)
+    )
+
+
+# ── Logged-in user's rating for a specific movie ───────────────────────────────
 
 @ratings_bp.route("/ratings/me/<int:movie_id>", methods=["GET"])
 def get_my_rating(movie_id: int):
@@ -137,8 +154,8 @@ def get_my_rating(movie_id: int):
             return jsonify({
                 "success":   True,
                 "rated":     True,
-                "rating_id": row[0],
-                "rating":    float(row[1])
+                "rating_id": row["RatingID"],
+                "rating":    float(row["RatingValue"])
             }), 200
         else:
             return jsonify({"success": True, "rated": False}), 200
@@ -147,7 +164,7 @@ def get_my_rating(movie_id: int):
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# Get all ratings for a movie
+# ── Get all ratings for a movie ────────────────────────────────────────────────
 
 @ratings_bp.route("/ratings/<int:movie_id>", methods=["GET"])
 def get_movie_ratings(movie_id: int):
@@ -174,8 +191,8 @@ def get_movie_ratings(movie_id: int):
         return jsonify({
             "success": True,
             "data": {
-                "average": float(row[0]) if row[0] else 0.0,
-                "total":   row[1]
+                "average": float(row["Average"]) if row["Average"] else 0.0,
+                "total":   row["Total"]
             }
         }), 200
 

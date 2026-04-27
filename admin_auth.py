@@ -1,19 +1,6 @@
 """
 admin_auth.py — Admin Authentication (separate session namespace from users).
 
-SOLID:
-  SRP  — handles ONLY admin login/logout/session; no CRUD logic here.
-  OCP  — admin CRUD lives in admin.py; extending admin features never touches this file.
-  LSP  — N/A.
-  ISP  — exposes only three endpoints; callers never see internal helpers.
-  DIP  — DB via get_connection(); bcrypt via library. No concrete classes instantiated.
-
-CRT:
-  Cohesion   — all three functions relate to one concern: admin identity.
-  Coupling   — no imports from any other blueprint.
-  Readability — session keys (admin_id, admin_username) are clearly distinct from
-                user session keys (user_id, username) to prevent privilege escalation.
-
 Security note:
   Admin accounts live in the Users table with Role = 'Admin'.
   A regular user session (user_id) never contains admin_id, so a normal user
@@ -49,6 +36,7 @@ def admin_login():
         cursor = conn.cursor()
 
         # Only rows with Role = 'Admin' qualify — regular users are rejected here
+        # SQLite: LOWER() works the same; no MSSQL-specific syntax needed
         cursor.execute(
             """
             SELECT UserID, Username, PasswordHash, IsActive
@@ -60,12 +48,14 @@ def admin_login():
         )
         row = cursor.fetchone()
 
-        # Generic message — never reveal which field failed
         if row is None:
             conn.close()
             return jsonify({"success": False, "message": "Invalid credentials."}), 401
 
-        user_id, username, password_hash, is_active = row
+        user_id       = row["UserID"]
+        username      = row["Username"]
+        password_hash = row["PasswordHash"]
+        is_active     = row["IsActive"]
 
         if not is_active:
             conn.close()
@@ -76,13 +66,14 @@ def admin_login():
             conn.close()
             return jsonify({"success": False, "message": "Invalid credentials."}), 401
 
+        # SQLite: datetime('now') instead of GETDATE()
         cursor.execute(
-            "UPDATE Users SET LastLogin = GETDATE() WHERE UserID = ?", (user_id,)
+            "UPDATE Users SET LastLogin = datetime('now') WHERE UserID = ?",
+            (user_id,)
         )
         conn.commit()
         conn.close()
 
-        # Use separate session keys — distinct from user_id / username
         session["admin_id"]       = user_id
         session["admin_username"] = username
 

@@ -1,5 +1,5 @@
 """
-UC01 logging in/ registering handles login, register, logout
+UC01 logging in / registering — handles login, register, logout
 """
 
 from flask import Blueprint, request, jsonify, session
@@ -11,14 +11,14 @@ auth_bp = Blueprint("auth", __name__)
 
 
 def _is_valid_email(email: str) -> bool:
-    #email format check
     pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$"
     return bool(re.match(pattern, email))
 
+
 def _is_strong_password(password: str) -> bool:
     """
-    Password be at least 8 characters and contain at least 1
-    uc letter, 1 lc letter, one digit
+    Password must be at least 8 characters and contain at least 1
+    uppercase letter, 1 lowercase letter, and one digit.
     """
     if len(password) < 8:
         return False
@@ -30,7 +30,8 @@ def _is_strong_password(password: str) -> bool:
         return False
     return True
 
-# register
+
+# ── Register ───────────────────────────────────────────────────────────────────
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
@@ -41,7 +42,6 @@ def register():
     password         = data.get("password") or ""
     confirm_password = data.get("confirm_password") or ""
 
-    # input validation
     if not username:
         return jsonify({"success": False, "message": "Username is required."}), 400
     if not email:
@@ -49,7 +49,6 @@ def register():
     if not password:
         return jsonify({"success": False, "message": "Password is required."}), 400
 
-    # format validation
     if len(username) < 3 or len(username) > 50:
         return jsonify({"success": False, "message": "Username must be 3–50 characters."}), 400
 
@@ -65,9 +64,6 @@ def register():
     if password != confirm_password:
         return jsonify({"success": False, "message": "Passwords do not match."}), 400
 
-    # db checks uniqueness 
-    # Using parameterised queries everywhere so zero SQL injection risk
-    # The ? is filled by pyodbc, never by string concatenation
     try:
         conn   = get_connection()
         cursor = conn.cursor()
@@ -82,13 +78,8 @@ def register():
             conn.close()
             return jsonify({"success": False, "message": "An account with this email already exists."}), 409
 
-        # Hash password 
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
-        # Role defaults to 'User' in the DB, IsActive defaults to 1.
-        # The TR_Users_CreatePreferences trigger fires automatically here,
-        # Note: OUTPUT clause causes SQLFetch sequence errors with pyodbc+triggers,
-        # so use INSERT then SELECT separately
         cursor.execute(
             "INSERT INTO Users (Username, Email, PasswordHash) VALUES (?, ?, ?)",
             (username, email, hashed)
@@ -100,18 +91,17 @@ def register():
             (username,)
         )
         row     = cursor.fetchone()
-        user_id = row[0]
-        role    = row[1]
+        user_id = row["UserID"]
+        role    = row["Role"]
 
-        # update lastlogin
+        # SQLite: datetime('now') instead of GETDATE()
         cursor.execute(
-            "UPDATE Users SET LastLogin = GETDATE() WHERE UserID = ?",
+            "UPDATE Users SET LastLogin = datetime('now') WHERE UserID = ?",
             (user_id,)
         )
         conn.commit()
         conn.close()
 
-        # creating serverside session (auto-login) 
         session["user_id"]  = user_id
         session["username"] = username
         session["role"]     = role
@@ -128,16 +118,15 @@ def register():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# login
+# ── Login ──────────────────────────────────────────────────────────────────────
+
 @auth_bp.route("/login", methods=["POST"])
 def login():
-   
     data = request.get_json()
 
-    identifier = (data.get("identifier") or "").strip()   # both username or mail
+    identifier = (data.get("identifier") or "").strip()   # username or email
     password   = data.get("password") or ""
 
-    # Presence check 
     if not identifier:
         return jsonify({"success": False, "message": "Please enter your username or email."}), 400
     if not password:
@@ -157,14 +146,16 @@ def login():
         )
         row = cursor.fetchone()
 
-        # "invalid credentials" 
         if row is None:
             conn.close()
             return jsonify({"success": False, "message": "Invalid username/email or password."}), 401
 
-        user_id, username, password_hash, role, is_active = row
+        user_id       = row["UserID"]
+        username      = row["Username"]
+        password_hash = row["PasswordHash"]
+        role          = row["Role"]
+        is_active     = row["IsActive"]
 
-        # Account active check
         if not is_active:
             conn.close()
             return jsonify({"success": False, "message": "This account has been deactivated."}), 403
@@ -173,20 +164,18 @@ def login():
             conn.close()
             return jsonify({"success": False, "message": "Invalid username/email or password."}), 401
 
-        # update LastLogin timestamp
+        # SQLite: datetime('now') instead of GETDATE()
         cursor.execute(
-            "UPDATE Users SET LastLogin = GETDATE() WHERE UserID = ?",
+            "UPDATE Users SET LastLogin = datetime('now') WHERE UserID = ?",
             (user_id,)
         )
         conn.commit()
         conn.close()
 
-        #Create session
         session["user_id"]  = user_id
         session["username"] = username
         session["role"]     = role
 
-        #Tell frontend where to redirect 
         redirect = "/admin/dashboard" if role == "Admin" else "/browse"
 
         return jsonify({
@@ -202,7 +191,7 @@ def login():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-#logout
+# ── Logout ─────────────────────────────────────────────────────────────────────
 
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
@@ -210,7 +199,7 @@ def logout():
     return jsonify({"success": True, "message": "Logged out."}), 200
 
 
-#session checl used by other pages to know if user is logged in
+# ── Session check ──────────────────────────────────────────────────────────────
 
 @auth_bp.route("/me", methods=["GET"])
 def me():

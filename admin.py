@@ -1,21 +1,6 @@
 """
 admin.py — Admin Blueprint: user restriction & movie library management.
 
-SOLID:
-  SRP  — two concerns (users, movies) but both are admin-only CRUD operations.
-         Each concern has its own clearly labelled section.
-         Authentication lives in admin_auth.py, not here.
-  OCP  — adding a new admin feature = new route; existing routes unchanged.
-  LSP  — N/A (no inheritance).
-  ISP  — _require_admin() is the single guard; endpoints don't duplicate the check.
-  DIP  — DB via get_connection(); no pyodbc details in business logic.
-
-CRT:
-  Cohesion   — every function either manages users or manages movies for admins.
-  Coupling   — no imports from any user-facing blueprint.
-  Readability — _require_admin() extracted once; col_map in update_movie keeps
-                SQL generation clean and injection-free.
-
 Security:
   _require_admin() checks for admin_id in session (set only by admin_auth.py).
   A regular user session (user_id) can never contain admin_id.
@@ -30,21 +15,25 @@ admin_bp = Blueprint("admin", __name__)
 # ── Auth guard ─────────────────────────────────────────────────────────────────
 
 def _require_admin():
-    """
-    Only sessions created by /api/admin/login carry admin_id.
-    Regular user sessions never do, so this guard is privilege-escalation-proof.
-    Returns a JSON 401 tuple on failure, or None on success.
-    """
     if "admin_id" not in session:
         return jsonify({"success": False, "message": "Admin login required."}), 401
     return None
+
+
+# ── Helper: SQLite rows return strings for TEXT date columns ───────────────────
+
+def _fmt_date(value) -> str:
+    """SQLite stores dates as TEXT (ISO strings); just slice to date part."""
+    if not value:
+        return ""
+    return str(value)[:10]
 
 
 # ── USER MANAGEMENT ────────────────────────────────────────────────────────────
 
 @admin_bp.route("/admin/users", methods=["GET"])
 def list_users():
-    """Return all registered users (excluding admin accounts) with status info."""
+    """Return all registered users with status info."""
     err = _require_admin()
     if err:
         return err
@@ -63,13 +52,14 @@ def list_users():
 
         users = [
             {
-                "user_id":    r.UserID,
-                "username":   r.Username,
-                "email":      r.Email,
-                "role":       r.Role,
-                "is_active":  bool(r.IsActive),
-                "created_at": r.CreatedAt.strftime("%Y-%m-%d") if r.CreatedAt else "",
-                "last_login": r.LastLogin.strftime("%Y-%m-%d") if r.LastLogin else "Never",
+                "user_id":    r["UserID"],
+                "username":   r["Username"],
+                "email":      r["Email"],
+                "role":       r["Role"],
+                "is_active":  bool(r["IsActive"]),
+                # SQLite TEXT dates — no .strftime() needed
+                "created_at": _fmt_date(r["CreatedAt"]),
+                "last_login": _fmt_date(r["LastLogin"]) or "Never",
             }
             for r in rows
         ]
@@ -83,15 +73,12 @@ def list_users():
 def toggle_user_restriction(user_id: int):
     """
     Toggle IsActive for a non-admin user.
-    Guards:
-      - Cannot restrict yourself.
-      - Cannot restrict another admin.
+    Guards: cannot restrict yourself; cannot restrict another admin.
     """
     err = _require_admin()
     if err:
         return err
 
-    # SRP guard: admins cannot self-restrict via this endpoint
     if user_id == session.get("admin_id"):
         return jsonify({"success": False, "message": "Cannot restrict your own account."}), 400
 
@@ -105,11 +92,11 @@ def toggle_user_restriction(user_id: int):
             conn.close()
             return jsonify({"success": False, "message": "User not found."}), 404
 
-        if row.Role == "Admin":
+        if row["Role"] == "Admin":
             conn.close()
             return jsonify({"success": False, "message": "Cannot restrict another admin."}), 403
 
-        new_status = 0 if row.IsActive else 1
+        new_status = 0 if row["IsActive"] else 1
         cursor.execute(
             "UPDATE Users SET IsActive = ? WHERE UserID = ?", (new_status, user_id)
         )
@@ -152,20 +139,20 @@ def list_all_movies():
 
         movies = [
             {
-                "movie_id":       r.MovieID,
-                "title":          r.Title,
-                "release_year":   r.ReleaseYear,
-                "runtime":        r.Runtime,
-                "description":    r.Description,
-                "poster_url":     r.PosterURL  or "",
-                "trailer_url":    r.TrailerURL or "",
-                "director":       r.Director   or "",
-                "cast":           r.Cast       or "",
-                "average_rating": float(r.AverageRating) if r.AverageRating else 0.0,
-                "total_ratings":  r.TotalRatings or 0,
-                "genres":         r.Genres    or "",
-                "platforms":      r.Platforms or "",
-                "is_approved":    bool(r.IsApproved),
+                "movie_id":       r["MovieID"],
+                "title":          r["Title"],
+                "release_year":   r["ReleaseYear"],
+                "runtime":        r["Runtime"],
+                "description":    r["Description"],
+                "poster_url":     r["PosterURL"]  or "",
+                "trailer_url":    r["TrailerURL"] or "",
+                "director":       r["Director"]   or "",
+                "cast":           r["Cast"]       or "",
+                "average_rating": float(r["AverageRating"]) if r["AverageRating"] else 0.0,
+                "total_ratings":  r["TotalRatings"] or 0,
+                "genres":         r["Genres"]    or "",
+                "platforms":      r["Platforms"] or "",
+                "is_approved":    bool(r["IsApproved"]),
             }
             for r in rows
         ]
@@ -225,12 +212,8 @@ def add_movie():
         )
         conn.commit()
 
-        # Retrieve the new ID (OUTPUT clause causes pyodbc trigger errors)
-        cursor.execute(
-            "SELECT TOP 1 MovieID FROM Movies WHERE Title = ? ORDER BY MovieID DESC",
-            (title,)
-        )
-        new_id = cursor.fetchone()[0]
+        # SQLite: last_insert_rowid() to get the new PK
+        new_id = cursor.lastrowid
         conn.close()
 
         return jsonify({
@@ -247,8 +230,7 @@ def add_movie():
 def update_movie(movie_id: int):
     """
     Update editable fields of a movie.
-    Uses a whitelist (col_map) to prevent arbitrary column injection —
-    only allowed keys are translated to actual column names.
+    Uses a whitelist (col_map) to prevent arbitrary column injection.
     """
     err = _require_admin()
     if err:
@@ -256,7 +238,6 @@ def update_movie(movie_id: int):
 
     data = request.get_json() or {}
 
-    # OCP / Security: whitelist — unknown keys are silently ignored
     col_map = {
         "title":        "Title",
         "release_year": "ReleaseYear",
@@ -294,7 +275,7 @@ def update_movie(movie_id: int):
 
 @admin_bp.route("/admin/movies/<int:movie_id>", methods=["DELETE"])
 def delete_movie(movie_id: int):
-    """Permanently delete a movie and all its related ratings/reviews (via DB cascade)."""
+    """Permanently delete a movie and all its related data (via DB cascade)."""
     err = _require_admin()
     if err:
         return err
@@ -328,7 +309,7 @@ def toggle_approval(movie_id: int):
             conn.close()
             return jsonify({"success": False, "message": "Movie not found."}), 404
 
-        new_val = 0 if row[0] else 1
+        new_val = 0 if row["IsApproved"] else 1
         cursor.execute(
             "UPDATE Movies SET IsApproved = ? WHERE MovieID = ?", (new_val, movie_id)
         )
@@ -350,20 +331,21 @@ def toggle_approval(movie_id: int):
 
 @admin_bp.route("/admin/stats", methods=["GET"])
 def admin_stats():
-    """Dashboard summary counts: total users, restricted, total movies, pending approval."""
+    """Dashboard summary counts: total users, restricted, total movies, pending."""
     err = _require_admin()
     if err:
         return err
     try:
         conn   = get_connection()
         cursor = conn.cursor()
+        # SQLite supports scalar sub-selects in SELECT the same as MSSQL
         cursor.execute(
             """
             SELECT
-                (SELECT COUNT(*) FROM Users WHERE Role    = 'User') AS total_users,
-                (SELECT COUNT(*) FROM Users WHERE IsActive = 0)     AS restricted_users,
-                (SELECT COUNT(*) FROM Movies)                       AS total_movies,
-                (SELECT COUNT(*) FROM Movies WHERE IsApproved = 0)  AS pending_movies
+                (SELECT COUNT(*) FROM Users WHERE Role     = 'User') AS total_users,
+                (SELECT COUNT(*) FROM Users WHERE IsActive = 0)      AS restricted_users,
+                (SELECT COUNT(*) FROM Movies)                        AS total_movies,
+                (SELECT COUNT(*) FROM Movies WHERE IsApproved = 0)   AS pending_movies
             """
         )
         r = cursor.fetchone()
@@ -372,10 +354,10 @@ def admin_stats():
         return jsonify({
             "success": True,
             "data": {
-                "total_users":      r[0],
-                "restricted_users": r[1],
-                "total_movies":     r[2],
-                "pending_movies":   r[3],
+                "total_users":      r["total_users"],
+                "restricted_users": r["restricted_users"],
+                "total_movies":     r["total_movies"],
+                "pending_movies":   r["pending_movies"],
             }
         }), 200
 

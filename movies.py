@@ -1,7 +1,8 @@
-"""UC02 browsing library and UC06 filtering movies
-Handle:  GET /api/movies           =full catalog
-         GET /api/movies/<id>      =single movie detail
-         GET /api/movies/filter    =filtered catalog (genre, year, rating, platform)
+"""
+UC02 browsing library and UC06 filtering movies
+Handle:  GET /api/movies           = full catalog
+         GET /api/movies/<id>      = single movie detail
+         GET /api/movies/filter    = filtered catalog (genre, year, rating, platform)
 """
 
 from flask import Blueprint, jsonify, session, request
@@ -9,38 +10,35 @@ from db import get_connection
 
 movies_bp = Blueprint("movies", __name__)
 
-# login check
+
 def _login_required():
     if "user_id" not in session:
         return jsonify({"success": False, "message": "Please log in first."}), 401
     return None
 
-# format one movie row into a dict 
-# solid open closed as if new column is added to Movies later, only
-# this one function chanegs 
+
 def _format_movie(row) -> dict:
     return {
-        "movie_id":       row.MovieID,
-        "title":          row.Title,
-        "release_year":   row.ReleaseYear,
-        "runtime":        row.Runtime,
-        "description":    row.Description,
-        "poster_url":     row.PosterURL,
-        "trailer_url":    row.TrailerURL,
-        "director":       row.Director,
-        "cast":           row.Cast,
-        "average_rating": float(row.AverageRating) if row.AverageRating else 0.0,
-        "total_ratings":  row.TotalRatings,
-        "genres":         row.Genres or "",
-        "platforms":      row.Platforms or "",
+        "movie_id":       row["MovieID"],
+        "title":          row["Title"],
+        "release_year":   row["ReleaseYear"],
+        "runtime":        row["Runtime"],
+        "description":    row["Description"],
+        "poster_url":     row["PosterURL"],
+        "trailer_url":    row["TrailerURL"],
+        "director":       row["Director"],
+        "cast":           row["Cast"],
+        "average_rating": float(row["AverageRating"]) if row["AverageRating"] else 0.0,
+        "total_ratings":  row["TotalRatings"],
+        "genres":         row["Genres"] or "",
+        "platforms":      row["Platforms"] or "",
     }
 
 
-# UC02 get all movies
+# ── UC02 get all movies ────────────────────────────────────────────────────────
 
 @movies_bp.route("/movies", methods=["GET"])
 def get_movies():
-
     err = _login_required()
     if err:
         return err
@@ -49,8 +47,6 @@ def get_movies():
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # VW_MoviesComplete already combines genres and platforms
-        # IsApproved = 1 means admin approved movie, UC-14 does this
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
@@ -64,7 +60,6 @@ def get_movies():
         rows = cursor.fetchall()
         conn.close()
 
-        # Alternate flow if catalog is empty
         if not rows:
             return jsonify({
                 "success": True,
@@ -79,11 +74,10 @@ def get_movies():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# UC02 get one movie detail
+# ── UC02 get one movie detail ──────────────────────────────────────────────────
 
 @movies_bp.route("/movies/<int:movie_id>", methods=["GET"])
 def get_movie_detail(movie_id: int):
-
     err = _login_required()
     if err:
         return err
@@ -92,7 +86,6 @@ def get_movie_detail(movie_id: int):
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # fetch the movie 
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
@@ -112,7 +105,7 @@ def get_movie_detail(movie_id: int):
 
         movie = _format_movie(row)
 
-        # get public reviews for this movie as UC-02 says reviews to appear on detail page
+        # Public reviews for this movie
         cursor.execute(
             """
             SELECT r.ReviewText, r.CreatedAt, u.Username, rt.RatingValue
@@ -127,23 +120,24 @@ def get_movie_detail(movie_id: int):
         )
         review_rows = cursor.fetchall()
 
+        # SQLite stores CreatedAt as TEXT; just slice to date
         reviews = [
             {
-                "username":     rv.Username,
-                "rating":       float(rv.RatingValue),
-                "review_text":  rv.ReviewText,
-                "created_at":   rv.CreatedAt.strftime("%Y-%m-%d") if rv.CreatedAt else "",
+                "username":    rv["Username"],
+                "rating":      float(rv["RatingValue"]),
+                "review_text": rv["ReviewText"],
+                "created_at":  str(rv["CreatedAt"])[:10] if rv["CreatedAt"] else "",
             }
             for rv in review_rows
         ]
 
-        # get rating (how many stars)
+        # Rating distribution — SQLite: CAST(x AS INT) works the same
         cursor.execute(
             """
-            SELECT CAST(RatingValue AS INT) AS Stars, COUNT(*) AS Total
+            SELECT CAST(RatingValue AS INTEGER) AS Stars, COUNT(*) AS Total
             FROM   Ratings
             WHERE  MovieID = ?
-            GROUP  BY CAST(RatingValue AS INT)
+            GROUP  BY CAST(RatingValue AS INTEGER)
             ORDER  BY Stars
             """,
             (movie_id,)
@@ -151,8 +145,7 @@ def get_movie_detail(movie_id: int):
         dist_rows   = cursor.fetchall()
         conn.close()
 
-        rating_distribution = {str(r.Stars): r.Total for r in dist_rows}
-        # mkae sure all 5 star levels present even if count is 0
+        rating_distribution = {str(r["Stars"]): r["Total"] for r in dist_rows}
         for star in ["1", "2", "3", "4", "5"]:
             rating_distribution.setdefault(star, 0)
 
@@ -165,11 +158,10 @@ def get_movie_detail(movie_id: int):
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# UC06 filter movies 
+# ── UC06 filter movies ─────────────────────────────────────────────────────────
 
 @movies_bp.route("/movies/filter", methods=["GET"])
 def filter_movies():
-    
     err = _login_required()
     if err:
         return err
@@ -199,13 +191,11 @@ def filter_movies():
             conditions.append("AverageRating >= ?")
             params.append(rating)
 
-        # Each selected genre must appear in the Genres string
         if genre:
             for g in [g.strip() for g in genre.split(",") if g.strip()]:
                 conditions.append("Genres LIKE ?")
                 params.append(f"%{g}%")
 
-        # movie must be on at least one selected platform
         if platform:
             plat_list = [p.strip() for p in platform.split(",") if p.strip()]
             if plat_list:

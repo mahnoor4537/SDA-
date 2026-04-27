@@ -28,12 +28,10 @@ def _login_required():
 
 
 def _fmt_date(value) -> str:
-    if value is None:
+    """SQLite dates are TEXT (ISO strings); slice to YYYY-MM-DD."""
+    if not value:
         return "—"
-    try:
-        return value.strftime("%Y-%m-%d")
-    except AttributeError:
-        return str(value)[:10]
+    return str(value)[:10]
 
 
 def _is_strong_password(password: str) -> bool:
@@ -65,9 +63,10 @@ def _get_user_by_username(cursor, username: str):
 
 
 def _get_stats(cursor, user_id: int) -> dict:
+    # SQLite: COALESCE instead of ISNULL; CAST AS REAL instead of FLOAT
     cursor.execute(
         """
-        SELECT COUNT(*), ISNULL(AVG(CAST(RatingValue AS FLOAT)), 0)
+        SELECT COUNT(*), COALESCE(AVG(CAST(RatingValue AS REAL)), 0)
         FROM   Ratings WHERE UserID = ?
         """,
         (user_id,)
@@ -79,26 +78,32 @@ def _get_stats(cursor, user_id: int) -> dict:
     cursor.execute("SELECT COUNT(*) FROM Reviews WHERE UserID = ?", (user_id,))
     total_reviews = cursor.fetchone()[0]
 
+    # SQLite: no TOP — use LIMIT; no GROUP BY required for single-row subquery
     cursor.execute(
         """
-        SELECT TOP 1 m.Genres
+        SELECT m.Genres
         FROM   Ratings r
         JOIN   VW_MoviesComplete m ON r.MovieID = m.MovieID
         WHERE  r.UserID = ? AND m.Genres IS NOT NULL
-        GROUP  BY m.Genres ORDER BY COUNT(*) DESC
+        GROUP  BY m.Genres
+        ORDER  BY COUNT(*) DESC
+        LIMIT  1
         """,
         (user_id,)
     )
     genre_row = cursor.fetchone()
     top_genre = genre_row[0].split(",")[0].strip() if genre_row else "—"
 
+    # SQLite: integer division for decade
     cursor.execute(
         """
-        SELECT TOP 1 (m.ReleaseYear / 10) * 10 AS Decade, COUNT(*) AS Cnt
+        SELECT (m.ReleaseYear / 10) * 10 AS Decade, COUNT(*) AS Cnt
         FROM   Ratings r
         JOIN   VW_MoviesComplete m ON r.MovieID = m.MovieID
         WHERE  r.UserID = ? AND m.ReleaseYear IS NOT NULL
-        GROUP  BY (m.ReleaseYear / 10) * 10 ORDER BY Cnt DESC
+        GROUP  BY (m.ReleaseYear / 10) * 10
+        ORDER  BY Cnt DESC
+        LIMIT  1
         """,
         (user_id,)
     )
@@ -121,9 +126,10 @@ def _get_stats(cursor, user_id: int) -> dict:
 def _get_rating_distribution(cursor, user_id: int) -> dict:
     cursor.execute(
         """
-        SELECT CAST(RatingValue AS INT) AS Stars, COUNT(*) AS Cnt
+        SELECT CAST(RatingValue AS INTEGER) AS Stars, COUNT(*) AS Cnt
         FROM   Ratings WHERE UserID = ?
-        GROUP  BY CAST(RatingValue AS INT) ORDER BY Stars
+        GROUP  BY CAST(RatingValue AS INTEGER)
+        ORDER  BY Stars
         """,
         (user_id,)
     )
@@ -141,8 +147,8 @@ def _get_genre_breakdown(cursor, user_id: int) -> list:
         (user_id,)
     )
     genre_counts = {}
-    for (genres_str,) in cursor.fetchall():
-        for g in genres_str.split(","):
+    for row in cursor.fetchall():
+        for g in row[0].split(","):
             g = g.strip()
             if g:
                 genre_counts[g] = genre_counts.get(g, 0) + 1
@@ -158,7 +164,8 @@ def _get_decade_breakdown(cursor, user_id: int) -> list:
         FROM   Ratings r
         JOIN   VW_MoviesComplete m ON r.MovieID = m.MovieID
         WHERE  r.UserID = ? AND m.ReleaseYear IS NOT NULL
-        GROUP  BY (m.ReleaseYear / 10) * 10 ORDER BY Decade
+        GROUP  BY (m.ReleaseYear / 10) * 10
+        ORDER  BY Decade
         """,
         (user_id,)
     )
@@ -166,38 +173,54 @@ def _get_decade_breakdown(cursor, user_id: int) -> list:
 
 
 def _get_recent_activity(cursor, user_id: int) -> list:
+    # SQLite: LIMIT instead of TOP
     cursor.execute(
         """
-        SELECT TOP 5 m.Title, r.RatingValue, r.RatedAt
+        SELECT m.Title, r.RatingValue, r.RatedAt
         FROM   Ratings r
         JOIN   VW_MoviesComplete m ON r.MovieID = m.MovieID
-        WHERE  r.UserID = ? ORDER BY r.RatedAt DESC
+        WHERE  r.UserID = ?
+        ORDER  BY r.RatedAt DESC
+        LIMIT  5
         """,
         (user_id,)
     )
-    ratings = [{"type": "rating", "movie": row[0], "rating": int(row[1]), "created_at": _fmt_date(row[2])} for row in cursor.fetchall()]
+    ratings = [
+        {"type": "rating", "movie": row[0], "rating": int(row[1]), "created_at": _fmt_date(row[2])}
+        for row in cursor.fetchall()
+    ]
 
     cursor.execute(
         """
-        SELECT TOP 5 m.Title, rv.CreatedAt
+        SELECT m.Title, rv.CreatedAt
         FROM   Reviews rv
         JOIN   VW_MoviesComplete m ON rv.MovieID = m.MovieID
-        WHERE  rv.UserID = ? ORDER BY rv.CreatedAt DESC
+        WHERE  rv.UserID = ?
+        ORDER  BY rv.CreatedAt DESC
+        LIMIT  5
         """,
         (user_id,)
     )
-    reviews = [{"type": "review", "movie": row[0], "rating": None, "created_at": _fmt_date(row[1])} for row in cursor.fetchall()]
+    reviews = [
+        {"type": "review", "movie": row[0], "rating": None, "created_at": _fmt_date(row[1])}
+        for row in cursor.fetchall()
+    ]
 
     cursor.execute(
         """
-        SELECT TOP 5 m.Title, w.AddedAt
+        SELECT m.Title, w.AddedAt
         FROM   Watchlist w
         JOIN   VW_MoviesComplete m ON w.MovieID = m.MovieID
-        WHERE  w.UserID = ? ORDER BY w.AddedAt DESC
+        WHERE  w.UserID = ?
+        ORDER  BY w.AddedAt DESC
+        LIMIT  5
         """,
         (user_id,)
     )
-    watchlist = [{"type": "watchlist", "movie": row[0], "rating": None, "created_at": _fmt_date(row[1])} for row in cursor.fetchall()]
+    watchlist = [
+        {"type": "watchlist", "movie": row[0], "rating": None, "created_at": _fmt_date(row[1])}
+        for row in cursor.fetchall()
+    ]
 
     combined = ratings + reviews + watchlist
     combined.sort(key=lambda x: x["created_at"], reverse=True)
@@ -217,7 +240,13 @@ def _get_public_reviews(cursor, user_id: int) -> list:
         (user_id,)
     )
     return [
-        {"movie": row[0], "genres": row[1] or "", "rating": float(row[2]), "review_text": row[3], "created_at": _fmt_date(row[4])}
+        {
+            "movie":       row[0],
+            "genres":      row[1] or "",
+            "rating":      float(row[2]),
+            "review_text": row[3],
+            "created_at":  _fmt_date(row[4])
+        }
         for row in cursor.fetchall()
     ]
 
@@ -236,30 +265,63 @@ def _get_watchlist(cursor, user_id: int, viewer_id: int) -> tuple:
         SELECT m.Title, m.Genres, m.ReleaseYear, m.Runtime, m.AverageRating, w.AddedAt
         FROM   Watchlist w
         JOIN   VW_MoviesComplete m ON w.MovieID = m.MovieID
-        WHERE  w.UserID = ? ORDER BY w.AddedAt DESC
+        WHERE  w.UserID = ?
+        ORDER  BY w.AddedAt DESC
         """,
         (user_id,)
     )
     items = [
-        {"title": row[0], "genres": row[1] or "", "release_year": row[2], "runtime": row[3],
-         "avg_rating": round(float(row[4]) if row[4] else 0.0, 1), "added_at": _fmt_date(row[5])}
+        {
+            "title":        row[0],
+            "genres":       row[1] or "",
+            "release_year": row[2],
+            "runtime":      row[3],
+            "avg_rating":   round(float(row[4]) if row[4] else 0.0, 1),
+            "added_at":     _fmt_date(row[5])
+        }
         for row in cursor.fetchall()
     ]
     return items, True
 
 
 def _get_awards(cursor, user_id: int) -> list:
+    """
+    Awards are computed from review counts per month.
+    SQLite: strftime('%Y', col) and strftime('%m', col)
+    replace MSSQL's YEAR(col) and MONTH(col).
+    """
     from datetime import date
     awards = []
-    today = date.today()
-    y, m = today.year, today.month
+    today  = date.today()
+    y, m   = today.year, today.month
+
     for _ in range(12):
-        cursor.execute("""SELECT TOP 1 u.UserID, COUNT(*) AS ReviewCount FROM Reviews rv JOIN Users u ON rv.UserID = u.UserID WHERE YEAR(rv.CreatedAt) = ? AND MONTH(rv.CreatedAt) = ? GROUP BY u.UserID ORDER BY COUNT(*) DESC""", (y, m))
+        month_str = f"{y:04d}-{m:02d}"
+        cursor.execute(
+            """
+            SELECT u.UserID, COUNT(*) AS ReviewCount
+            FROM   Reviews rv
+            JOIN   Users u ON rv.UserID = u.UserID
+            WHERE  strftime('%Y-%m', rv.CreatedAt) = ?
+            GROUP  BY u.UserID
+            ORDER  BY COUNT(*) DESC
+            LIMIT  1
+            """,
+            (month_str,)
+        )
         row = cursor.fetchone()
         if row and row[0] == user_id:
-            awards.append({"category": "Most Active Reviewer", "month": date(y, m, 1).strftime("%B %Y"), "value": f"{row[1]} review{'s' if row[1] != 1 else ''}", "icon": "✍️"})
+            awards.append({
+                "category": "Most Active Reviewer",
+                "month":    date(y, m, 1).strftime("%B %Y"),
+                "value":    f"{row[1]} review{'s' if row[1] != 1 else ''}",
+                "icon":     "✍️"
+            })
         m -= 1
-        if m == 0: m = 12; y -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+
     return awards
 
 
@@ -304,7 +366,6 @@ def toggle_watchlist_privacy():
 
 @profile_bp.route("/profile/change-username", methods=["POST"])
 def change_username():
-    """Change username with old password confirmation."""
     guard = _login_required()
     if guard:
         return guard
@@ -324,14 +385,12 @@ def change_username():
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # Verify password
         cursor.execute("SELECT PasswordHash FROM Users WHERE UserID = ?", (session["user_id"],))
         row = cursor.fetchone()
         if not row or not bcrypt.checkpw(password.encode("utf-8"), row[0].encode("utf-8")):
             conn.close()
             return jsonify({"success": False, "message": "Incorrect password."}), 401
 
-        # Check username not taken
         cursor.execute("SELECT 1 FROM Users WHERE Username = ? AND UserID != ?", (new_username, session["user_id"]))
         if cursor.fetchone():
             conn.close()
@@ -341,7 +400,6 @@ def change_username():
         conn.commit()
         conn.close()
 
-        # Update session
         session["username"] = new_username
         return jsonify({"success": True, "message": "Username updated successfully.", "new_username": new_username}), 200
 
@@ -351,7 +409,6 @@ def change_username():
 
 @profile_bp.route("/profile/change-password", methods=["POST"])
 def change_password():
-    """Change password with old password confirmation."""
     guard = _login_required()
     if guard:
         return guard
@@ -394,7 +451,6 @@ def change_password():
 
 @profile_bp.route("/profile/update-info", methods=["POST"])
 def update_info():
-    """Update Bio and Location."""
     guard = _login_required()
     if guard:
         return guard
@@ -419,7 +475,6 @@ def update_info():
 
 @profile_bp.route("/profile/settings-data", methods=["GET"])
 def get_settings_data():
-    """Get current user data for pre-filling settings form."""
     guard = _login_required()
     if guard:
         return guard
@@ -470,8 +525,12 @@ def get_profile(username: str):
             conn.close()
             return jsonify({"success": False, "message": "User not found."}), 404
 
-        user_id, username_db, created_at, bio, location = user_row
-        viewer_id = session.get("user_id")
+        user_id     = user_row["UserID"]
+        username_db = user_row["Username"]
+        created_at  = user_row["CreatedAt"]
+        bio         = user_row["Bio"]
+        location    = user_row["Location"]
+        viewer_id   = session.get("user_id")
 
         stats        = _get_stats(cursor, user_id)
         distribution = _get_rating_distribution(cursor, user_id)

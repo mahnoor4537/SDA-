@@ -1,7 +1,8 @@
 """
 UC04 Writing Reviews
-Handles: POST /api/reviews          = submit a review (UC 3 precondition must have rated first)
-         GET  /api/reviews/<movie_id> = get all public reviews for a movie
+Handles: POST /api/reviews            = submit a review (must have rated first)
+         GET  /api/reviews/<movie_id>  = get all public reviews for a movie
+         GET  /api/reviews/me/<movie_id> = get logged-in user's own review
 """
 
 from flask import Blueprint, request, jsonify, session
@@ -18,11 +19,10 @@ def _login_required():
     return None
 
 
-# UC04 Submit a review
+# ── UC04 Submit a review ───────────────────────────────────────────────────────
 
 @reviews_bp.route("/reviews", methods=["POST"])
 def submit_review():
-
     err = _login_required()
     if err:
         return err
@@ -31,11 +31,9 @@ def submit_review():
     movie_id    = data.get("movie_id")
     review_text = (data.get("review_text") or "").strip()
 
-    # Presence check
     if not movie_id:
         return jsonify({"success": False, "message": "Movie ID is required."}), 400
 
-    #Validate review text
     if not review_text:
         return jsonify({"success": False, "message": "Review cannot be empty."}), 400
 
@@ -51,7 +49,6 @@ def submit_review():
         conn   = get_connection()
         cursor = conn.cursor()
 
-        #check user has rated this movie as review must be linked to a existing rating
         cursor.execute(
             "SELECT RatingID FROM Ratings WHERE UserID = ? AND MovieID = ?",
             (user_id, movie_id)
@@ -65,9 +62,8 @@ def submit_review():
                 "message": "You must rate this movie before writing a review."
             }), 400
 
-        rating_id = rating_row[0]
+        rating_id = rating_row["RatingID"]
 
-        # check if review already exists for this user+movie 
         cursor.execute(
             "SELECT ReviewID FROM Reviews WHERE UserID = ? AND MovieID = ?",
             (user_id, movie_id)
@@ -75,11 +71,11 @@ def submit_review():
         existing = cursor.fetchone()
 
         if existing:
-            #if yes, update existing review
+            # SQLite: datetime('now') instead of GETDATE()
             cursor.execute(
                 """
                 UPDATE Reviews
-                SET    ReviewText = ?, UpdatedAt = GETDATE()
+                SET    ReviewText = ?, UpdatedAt = datetime('now')
                 WHERE  UserID  = ?
                 AND    MovieID = ?
                 """,
@@ -94,11 +90,11 @@ def submit_review():
             }), 200
 
         else:
-            # else, insert new review. IsPublic defaults to 1 so review appears on movie detail and profile
+            # SQLite: datetime('now') instead of GETDATE()
             cursor.execute(
                 """
                 INSERT INTO Reviews (RatingID, UserID, MovieID, ReviewText, IsPublic, CreatedAt)
-                VALUES (?, ?, ?, ?, 1, GETDATE())
+                VALUES (?, ?, ?, ?, 1, datetime('now'))
                 """,
                 (rating_id, user_id, movie_id, review_text)
             )
@@ -114,7 +110,7 @@ def submit_review():
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# all public reviews for a movie 
+# ── All public reviews for a movie ─────────────────────────────────────────────
 
 @reviews_bp.route("/reviews/<int:movie_id>", methods=["GET"])
 def get_reviews(movie_id: int):
@@ -141,12 +137,13 @@ def get_reviews(movie_id: int):
         rows = cursor.fetchall()
         conn.close()
 
+        # SQLite CreatedAt is a TEXT column; slice to date
         reviews = [
             {
-                "username":    row.Username,
-                "rating":      float(row.RatingValue),
-                "review_text": row.ReviewText,
-                "created_at":  row.CreatedAt.strftime("%Y-%m-%d") if row.CreatedAt else ""
+                "username":    row["Username"],
+                "rating":      float(row["RatingValue"]),
+                "review_text": row["ReviewText"],
+                "created_at":  str(row["CreatedAt"])[:10] if row["CreatedAt"] else ""
             }
             for row in rows
         ]
@@ -157,7 +154,7 @@ def get_reviews(movie_id: int):
         return jsonify({"success": False, "message": f"Server error: {str(e)}"}), 500
 
 
-# get logged-in user's review for a specific movie 
+# ── Logged-in user's review for a specific movie ───────────────────────────────
 
 @reviews_bp.route("/reviews/me/<int:movie_id>", methods=["GET"])
 def get_my_review(movie_id: int):
@@ -182,7 +179,7 @@ def get_my_review(movie_id: int):
             return jsonify({
                 "success":     True,
                 "has_review":  True,
-                "review_text": row[0]
+                "review_text": row["ReviewText"]
             }), 200
         else:
             return jsonify({"success": True, "has_review": False}), 200

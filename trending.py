@@ -1,7 +1,11 @@
 """
 UC10 Trending Movies
-handles GET /api/trending          = top trending movies (last 7 days)
-         GET /api/trending/<days>   = trending over 30 days or 90
+handles GET /api/trending        = top trending movies (last 7 days)
+         GET /api/trending?days= = trending over custom window (max 365 days)
+
+Note: The MSSQL stored procedure SP_GetTrendingMovies has been replaced
+with the equivalent inline SQLite query (from db.get_trending_movies).
+SQLite does not support stored procedures.
 """
 
 from flask import Blueprint, request, jsonify, session
@@ -16,19 +20,17 @@ def _login_required():
     return None
 
 
-# UC10 Get trending movie
+# ── UC10 Get trending movies ───────────────────────────────────────────────────
 
 @trending_bp.route("/trending", methods=["GET"])
 def get_trending():
-
     err = _login_required()
     if err:
         return err
 
-    days = request.args.get("days", 7, type=int)
-    top_n = request.args.get("top", 20, type=int)
+    days  = request.args.get("days", 7, type=int)
+    top_n = request.args.get("top",  20, type=int)
 
-    # sensible bounds
     days  = max(1, min(days, 365))
     top_n = max(1, min(top_n, 100))
 
@@ -36,27 +38,46 @@ def get_trending():
         conn   = get_connection()
         cursor = conn.cursor()
 
-        # SP_GetTrendingMovies is already in the DB
-        # It returns MovieID, Title, ReleaseYear, AverageRating, RecentRatings, RecentWatchlistAdds
+        # SQLite: datetime('now', '-N days') replaces DATEADD(day, -N, GETDATE())
+        # This is equivalent to the MSSQL SP_GetTrendingMovies logic
+        days_param = f"-{days} days"
         cursor.execute(
-            "EXEC SP_GetTrendingMovies @DaysBack = ?, @TopN = ?",
-            (days, top_n)
+            """
+            SELECT  m.MovieID,
+                    m.Title,
+                    m.ReleaseYear,
+                    m.Runtime,
+                    m.Description,
+                    m.PosterURL,
+                    m.TrailerURL,
+                    m.Director,
+                    m.Cast,
+                    m.AverageRating,
+                    m.TotalRatings,
+                    m.Genres,
+                    m.Platforms,
+                    COUNT(DISTINCT r.UserID) AS RecentRatings,
+                    COUNT(DISTINCT w.UserID) AS RecentWatchlistAdds
+            FROM    VW_MoviesComplete m
+            LEFT    JOIN Ratings   r ON m.MovieID = r.MovieID
+                                     AND r.RatedAt  >= datetime('now', ?)
+            LEFT    JOIN Watchlist w ON m.MovieID = w.MovieID
+                                     AND w.AddedAt  >= datetime('now', ?)
+            WHERE   m.IsApproved = 1
+            GROUP   BY m.MovieID, m.Title, m.ReleaseYear, m.Runtime,
+                       m.Description, m.PosterURL, m.TrailerURL,
+                       m.Director, m.Cast, m.AverageRating,
+                       m.TotalRatings, m.Genres, m.Platforms
+            HAVING  COUNT(DISTINCT r.UserID) + COUNT(DISTINCT w.UserID) > 0
+            ORDER   BY COUNT(DISTINCT r.UserID) + COUNT(DISTINCT w.UserID) DESC
+            LIMIT   ?
+            """,
+            (days_param, days_param, top_n)
         )
         rows = cursor.fetchall()
+        conn.close()
 
-        # SP only returns a few columns,get full detail from VW_MoviesComplete
-        movie_ids = [row.MovieID for row in rows]
-        trend_map = {
-            row.MovieID: {
-                "recent_ratings":       row.RecentRatings,
-                "recent_watchlist_adds": row.RecentWatchlistAdds,
-                "trend_score":          row.RecentRatings + row.RecentWatchlistAdds
-            }
-            for row in rows
-        }
-
-        if not movie_ids:
-            conn.close()
+        if not rows:
             return jsonify({
                 "success": True,
                 "days":    days,
@@ -64,48 +85,27 @@ def get_trending():
                 "message": f"No trending movies in the last {days} days."
             }), 200
 
-        # Build parameterised IN clause
-        placeholders = ",".join("?" * len(movie_ids))
-        cursor.execute(
-            f"""
-            SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
-                   AverageRating, TotalRatings, Genres, Platforms
-            FROM   VW_MoviesComplete
-            WHERE  MovieID     IN ({placeholders})
-            AND    IsApproved   = 1
-            """,
-            tuple(movie_ids)
-        )
-        detail_rows = cursor.fetchall()
-        conn.close()
-
-        # Merge detail with trend scores, preserve SP's ranking order
-        detail_map = {row.MovieID: row for row in detail_rows}
-        movies = []
-        for mid in movie_ids:
-            row = detail_map.get(mid)
-            if not row:
-                continue
-            t = trend_map[mid]
-            movies.append({
-                "movie_id":              row.MovieID,
-                "title":                 row.Title,
-                "release_year":          row.ReleaseYear,
-                "runtime":               row.Runtime,
-                "description":           row.Description,
-                "poster_url":            row.PosterURL,
-                "trailer_url":           row.TrailerURL,
-                "director":              row.Director,
-                "cast":                  row.Cast,
-                "average_rating":        float(row.AverageRating) if row.AverageRating else 0.0,
-                "total_ratings":         row.TotalRatings,
-                "genres":                row.Genres or "",
-                "platforms":             row.Platforms or "",
-                "recent_ratings":        t["recent_ratings"],
-                "recent_watchlist_adds": t["recent_watchlist_adds"],
-                "trend_score":           t["trend_score"],
-            })
+        movies = [
+            {
+                "movie_id":              row["MovieID"],
+                "title":                 row["Title"],
+                "release_year":          row["ReleaseYear"],
+                "runtime":               row["Runtime"],
+                "description":           row["Description"],
+                "poster_url":            row["PosterURL"]  or "",
+                "trailer_url":           row["TrailerURL"] or "",
+                "director":              row["Director"]   or "",
+                "cast":                  row["Cast"]       or "",
+                "average_rating":        float(row["AverageRating"]) if row["AverageRating"] else 0.0,
+                "total_ratings":         row["TotalRatings"] or 0,
+                "genres":                row["Genres"]    or "",
+                "platforms":             row["Platforms"] or "",
+                "recent_ratings":        row["RecentRatings"],
+                "recent_watchlist_adds": row["RecentWatchlistAdds"],
+                "trend_score":           row["RecentRatings"] + row["RecentWatchlistAdds"],
+            }
+            for row in rows
+        ]
 
         return jsonify({
             "success": True,

@@ -11,15 +11,18 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+
 def init_db():
     import sqlite3
-    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
-    sql_path = os.path.join(BASE_DIR, "script.sql")
+    db_path  = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    # Use the SQLite schema file
+    sql_path = os.path.join(BASE_DIR, "schema_sqlite.sql")
     with open(sql_path, "r") as f:
         sql = f.read()
     conn = sqlite3.connect(db_path)
     conn.executescript(sql)
     conn.close()
+
 
 init_db()
 
@@ -56,55 +59,68 @@ app.register_blueprint(recommendations_bp, url_prefix="/api")
 app.register_blueprint(community_bp,       url_prefix="/api")
 app.register_blueprint(cineblend_bp,       url_prefix="/api")
 
+
 @app.route("/")
 @app.route("/login")
 def login_page():
     return send_from_directory(BASE_DIR, "cinematch-login.html")
 
+
 @app.route("/browse")
 def browse_page():
     return send_from_directory(BASE_DIR, "cinematch-browse.html")
+
 
 @app.route("/profile")
 def profile_page():
     return send_from_directory(BASE_DIR, "cinematch-profile.html")
 
+
 @app.route("/dashboard")
 def dashboard_page():
     return send_from_directory(BASE_DIR, "cinematch-dashboard.html")
+
 
 @app.route("/trending")
 def trending_page():
     return send_from_directory(BASE_DIR, "cinematch-trending.html")
 
+
 @app.route("/watchlist")
 def watchlist_page():
     return send_from_directory(BASE_DIR, "cinematch-watchlist.html")
+
 
 @app.route("/awards")
 def awards_page():
     return send_from_directory(BASE_DIR, "cinematch-awards.html")
 
+
 @app.route("/recommendations")
 def recommendations_page():
     return send_from_directory(BASE_DIR, "cinematch-recommendations.html")
+
 
 @app.route("/cineblend")
 def cineblend_page():
     return send_from_directory(BASE_DIR, "cinematch-cineblend.html")
 
+
 @app.route("/admin/login")
 def admin_login_page():
     return send_from_directory(BASE_DIR, "cinematch-admin-login.html")
+
 
 @app.route("/admin/dashboard")
 def admin_dashboard_page():
     return send_from_directory(BASE_DIR, "cinematch-admin.html")
 
+
 @app.route("/setup-db")
 def setup_db():
     init_db()
     return "Database initialized successfully!"
+
 
 if __name__ == "__main__":
     print("CineMatch backend running at http://localhost:5000")
