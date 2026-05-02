@@ -151,7 +151,24 @@ def run_seed():
         import traceback
         return f"Seed error: {str(e)}\n\n{traceback.format_exc()}", 500
 
-
+@app.route("/create-admin")
+def create_admin():
+    import sqlite3, bcrypt, os
+    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    password_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode("utf-8")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """INSERT INTO Users (Username, Email, PasswordHash, FullName, Role, IsActive)
+               VALUES ('admin', 'admin@cinematch.com', ?, 'Admin', 'Admin', 1)""",
+            (password_hash,)
+        )
+        conn.commit()
+        return "Admin created! Username: admin | Password: admin123"
+    except Exception as e:
+        return f"Error (already exists?): {str(e)}"
+    finally:
+        conn.close()
 if __name__ == "__main__":
     print("CineMatch backend running at http://localhost:5000")
     app.run(host="0.0.0.0", port=5000)
