@@ -51,7 +51,7 @@ def get_trending():
                     m.PosterURL,
                     m.TrailerURL,
                     m.Director,
-                    m.Cast,
+                    m."Cast",
                     m.AverageRating,
                     m.TotalRatings,
                     m.Genres,
@@ -66,7 +66,7 @@ def get_trending():
             WHERE   m.IsApproved = 1
             GROUP   BY m.MovieID, m.Title, m.ReleaseYear, m.Runtime,
                        m.Description, m.PosterURL, m.TrailerURL,
-                       m.Director, m.Cast, m.AverageRating,
+                       m.Director, m."Cast", m.AverageRating,
                        m.TotalRatings, m.Genres, m.Platforms
             HAVING  COUNT(DISTINCT r.UserID) + COUNT(DISTINCT w.UserID) > 0
             ORDER   BY COUNT(DISTINCT r.UserID) + COUNT(DISTINCT w.UserID) DESC

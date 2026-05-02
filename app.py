@@ -138,37 +138,18 @@ def setup_db():
 
 @app.route("/run-seed")
 def run_seed():
-    import sqlite3, os, requests, time
-    key = os.getenv("TMDB_API_KEY", "")
-    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
-    
-    results = []
-    
-    # Fetch 1 page from TMDB
-    r = requests.get("https://api.themoviedb.org/3/movie/popular",
-                     params={"api_key": key, "page": 1}, timeout=10)
-    movies = r.json().get("results", [])
-    results.append(f"TMDB returned {len(movies)} movies")
-    
-    # Try inserting the first one manually
-    if movies:
-        tmdb_id = movies[0]["id"]
-        title = movies[0]["title"]
-        try:
-            conn = sqlite3.connect(db_path)
-            conn.execute("PRAGMA foreign_keys = OFF")
-            conn.execute(
-                'INSERT OR IGNORE INTO Movies (TMDB_ID, Title, IsApproved) VALUES (?, ?, 1)',
-                (tmdb_id, title)
-            )
-            conn.commit()
-            count = conn.execute("SELECT COUNT(*) FROM Movies").fetchone()[0]
-            conn.close()
-            results.append(f"Inserted '{title}' — total movies now: {count}")
-        except Exception as e:
-            results.append(f"INSERT ERROR: {str(e)}")
-    
-    return "<br>".join(results)
+    try:
+        from seed import run
+        run()
+        import sqlite3
+        db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+        conn    = sqlite3.connect(db_path)
+        count   = conn.execute("SELECT COUNT(*) FROM Movies").fetchone()[0]
+        conn.close()
+        return f"Seeding complete! Movies in DB: {count}"
+    except Exception as e:
+        import traceback
+        return f"Seed error: {str(e)}\n\n{traceback.format_exc()}", 500
 
 
 if __name__ == "__main__":
