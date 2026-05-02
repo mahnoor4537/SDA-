@@ -59,7 +59,7 @@ app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"]   = True
 
-CORS(app, supports_credentials=True)
+CORS(app, supports_credentials=True, origins=["https://cinematch-x523.onrender.com"])
 
 app.register_blueprint(auth_bp,            url_prefix="/api")
 app.register_blueprint(movies_bp,          url_prefix="/api")
@@ -151,9 +151,10 @@ def run_seed():
         import traceback
         return f"Seed error: {str(e)}\n\n{traceback.format_exc()}", 500
 
+
 @app.route("/create-admin")
 def create_admin():
-    import sqlite3, bcrypt, os
+    import sqlite3, bcrypt
     db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
     password = "Admin1234"
     password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
@@ -165,13 +166,30 @@ def create_admin():
             (password_hash,)
         )
         conn.commit()
-        # Verify it was inserted correctly
-        row = conn.execute("SELECT UserID, Role FROM Users WHERE Username = 'admin'").fetchone()
-        return f"Admin created! ID: {row[0]}, Role: {row[1]} — Login with admin / Admin1234"
+        row = conn.execute("SELECT UserID, Username, Role, IsActive FROM Users WHERE Username = 'admin'").fetchone()
+        return f"Admin created! ID={row[0]} Username={row[1]} Role={row[2]} IsActive={row[3]} — Login with admin / Admin1234"
     except Exception as e:
         return f"Error: {str(e)}"
     finally:
         conn.close()
+
+
+@app.route("/check-admin")
+def check_admin():
+    import sqlite3
+    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute("SELECT UserID, Username, Email, Role, IsActive, PasswordHash FROM Users WHERE Role = 'Admin'").fetchall()
+        if not rows:
+            return "No admin users found in DB."
+        return "<br>".join([f"ID={r[0]} Username={r[1]} Email={r[2]} Role={r[3]} IsActive={r[4]} HashLen={len(r[5])}" for r in rows])
+    except Exception as e:
+        return f"Error: {str(e)}"
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
     print("CineMatch backend running at http://localhost:5000")
     app.run(host="0.0.0.0", port=5000)
