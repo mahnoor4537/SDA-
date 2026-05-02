@@ -180,7 +180,7 @@ SELECT
     m.PosterURL,
     m.TrailerURL,
     m.Director,
-    m.Cast,
+    m."Cast",
     m.AverageRating,
     m.TotalRatings,
     m.IsApproved,
