@@ -50,7 +50,7 @@ def get_movies():
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
+                   PosterURL, TrailerURL, Director, "Cast",
                    AverageRating, TotalRatings, Genres, Platforms
             FROM   VW_MoviesComplete
             WHERE  IsApproved = 1
@@ -89,7 +89,7 @@ def get_movie_detail(movie_id: int):
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
+                   PosterURL, TrailerURL, Director, "Cast",
                    AverageRating, TotalRatings, Genres, Platforms
             FROM   VW_MoviesComplete
             WHERE  MovieID    = ?
@@ -208,7 +208,7 @@ def filter_movies():
         cursor.execute(
             f"""
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
+                   PosterURL, TrailerURL, Director, "Cast",
                    AverageRating, TotalRatings, Genres, Platforms
             FROM   VW_MoviesComplete
             WHERE  {where_clause}
