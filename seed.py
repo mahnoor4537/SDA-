@@ -17,17 +17,14 @@ import time
 TMDB_BASE      = "https://api.themoviedb.org/3"
 TMDB_IMG_BASE  = "https://image.tmdb.org/t/p/w500"
 # Fetch from multiple TMDB endpoints for a diverse library
-# Each endpoint × PAGES_PER_ENDPOINT pages × 20 movies = ~400 movies + genre top picks
-PAGES_PER_ENDPOINT = 5
+PAGES_PER_ENDPOINT = 3   # 3 pages × 20 = 60 per endpoint
 TMDB_ENDPOINTS = [
     "/movie/popular",
     "/movie/top_rated",
 ]
-# Top genres for variety — 2 pages each = 20 movies per genre
-# TMDB genre IDs: 28=Action, 35=Comedy, 18=Drama, 27=Horror, 878=Sci-Fi,
-#                 53=Thriller, 10749=Romance, 16=Animation, 80=Crime, 99=Documentary
+# Top genres for variety — 1 page each = 20 movies per genre
 TMDB_GENRE_IDS = [28, 35, 18, 27, 878, 53, 10749, 16, 80, 99]
-GENRE_PAGES = 2  # 2 pages per genre
+GENRE_PAGES = 1  # 1 page per genre = 200 genre movies total
 
 
 # ── TMDB helpers ──────────────────────────────────────────────────────────────
@@ -274,7 +271,7 @@ def run():
                 # Fetch full detail
                 try:
                     detail = fetch_movie_detail(tmdb_id, TMDB_API_KEY)
-                    time.sleep(0.25)  # be kind to TMDB rate limits
+                    time.sleep(0.05)  # small delay to avoid rate limit
                 except Exception as e:
                     print(f"[seed] Detail fetch failed for {tmdb_id} ({title}): {e}")
                     continue
