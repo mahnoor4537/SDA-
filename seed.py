@@ -16,7 +16,7 @@ import sqlite3
 import requests
 
 try:
-    from simplejustwatchapi2.justwatch import search as jw_search
+    from simplejustwatchapi.justwatch import search as jw_search
     JUSTWATCH_AVAILABLE = True
 except ImportError:
     JUSTWATCH_AVAILABLE = False
