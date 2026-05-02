@@ -124,7 +124,7 @@ def get_watchlist():
         cursor.execute(
             """
             SELECT m.MovieID, m.Title, m.ReleaseYear, m.Runtime, m.Description,
-                   m.PosterURL, m.TrailerURL, m.Director, m.Cast,
+                   m.PosterURL, m.TrailerURL, m.Director, m."Cast",
                    m.AverageRating, m.TotalRatings, m.Genres, m.Platforms,
                    w.AddedAt
             FROM   Watchlist w
