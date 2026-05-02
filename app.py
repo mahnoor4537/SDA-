@@ -190,7 +190,10 @@ def check_admin():
         return f"Error: {str(e)}"
     finally:
         conn.close()
-
+        
+@app.route('/ping')
+def ping():
+    return 'ok', 200
 
 if __name__ == "__main__":
     print("CineMatch backend running at http://localhost:5000")
