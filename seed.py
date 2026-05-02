@@ -16,7 +16,20 @@ import time
 
 TMDB_BASE      = "https://api.themoviedb.org/3"
 TMDB_IMG_BASE  = "https://image.tmdb.org/t/p/w500"
-PAGES_TO_FETCH = 5   # 5 pages × 20 movies = up to 100 movies
+# Fetch from multiple TMDB endpoints for a diverse library
+# Each endpoint × PAGES_PER_ENDPOINT pages × 20 movies
+PAGES_PER_ENDPOINT = 10
+TMDB_ENDPOINTS = [
+    "/movie/popular",
+    "/movie/top_rated",
+    "/movie/now_playing",
+    "/movie/upcoming",
+]
+# Also fetch by genre IDs for even more variety
+# TMDB genre IDs: 28=Action, 35=Comedy, 18=Drama, 27=Horror, 878=Sci-Fi,
+#                 53=Thriller, 10749=Romance, 16=Animation, 80=Crime, 99=Documentary
+TMDB_GENRE_IDS = [28, 35, 18, 27, 878, 53, 10749, 16, 80, 99]
+GENRE_PAGES = 3  # 3 pages per genre
 
 
 # ── TMDB helpers ──────────────────────────────────────────────────────────────
@@ -219,14 +232,31 @@ def run():
     inserted = 0
     skipped  = 0
 
+    # Build full list of (endpoint, params) to fetch from
+    fetch_jobs = []
+    for endpoint in TMDB_ENDPOINTS:
+        for page in range(1, PAGES_PER_ENDPOINT + 1):
+            fetch_jobs.append((endpoint, {"page": page}))
+    for genre_id in TMDB_GENRE_IDS:
+        for page in range(1, GENRE_PAGES + 1):
+            fetch_jobs.append(("/discover/movie", {
+                "page": page,
+                "with_genres": genre_id,
+                "sort_by": "vote_count.desc",
+                "vote_count.gte": 100,
+            }))
+
+    total_jobs = len(fetch_jobs)
+    print(f"[seed] {total_jobs} fetch jobs planned (~{total_jobs * 20} movies before dedup)")
+
     try:
-        for page in range(1, PAGES_TO_FETCH + 1):
-            print(f"[seed] Fetching TMDB popular page {page}/{PAGES_TO_FETCH} ...")
+        for job_num, (endpoint, params) in enumerate(fetch_jobs, 1):
+            print(f"[seed] Job {job_num}/{total_jobs}: {endpoint} page {params.get('page')} ...")
             try:
-                data    = tmdb_get("/movie/popular", TMDB_API_KEY, {"page": page})
+                data    = tmdb_get(endpoint, TMDB_API_KEY, params)
                 results = data.get("results", [])
             except Exception as e:
-                print(f"[seed] TMDB page {page} failed: {e}")
+                print(f"[seed] Fetch failed for {endpoint}: {e}")
                 continue
 
             for movie_stub in results:
