@@ -194,7 +194,6 @@ def insert_movie(conn: sqlite3.Connection, detail: dict) -> int | None:
     )
     return cur.lastrowid
 
-
 def link_genres(conn: sqlite3.Connection, movie_id: int, tmdb_genres: list):
     for g in tmdb_genres:
         genre_id = ensure_genre(conn, g["name"])
