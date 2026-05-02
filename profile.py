@@ -79,20 +79,23 @@ def _get_stats(cursor, user_id: int) -> dict:
     total_reviews = cursor.fetchone()[0]
 
     # SQLite: no TOP — use LIMIT; no GROUP BY required for single-row subquery
+    # Count individual genres (not full strings) to find the real top genre
     cursor.execute(
         """
         SELECT m.Genres
         FROM   Ratings r
         JOIN   VW_MoviesComplete m ON r.MovieID = m.MovieID
         WHERE  r.UserID = ? AND m.Genres IS NOT NULL
-        GROUP  BY m.Genres
-        ORDER  BY COUNT(*) DESC
-        LIMIT  1
         """,
         (user_id,)
     )
-    genre_row = cursor.fetchone()
-    top_genre = genre_row[0].split(",")[0].strip() if genre_row else "—"
+    genre_counts = {}
+    for row in cursor.fetchall():
+        for g in row[0].split(","):
+            g = g.strip()
+            if g:
+                genre_counts[g] = genre_counts.get(g, 0) + 1
+    top_genre = max(genre_counts, key=genre_counts.get) if genre_counts else "—"
 
     # SQLite: integer division for decade
     cursor.execute(
