@@ -15,7 +15,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def init_db():
     import sqlite3
     db_path  = os.getenv("SQLITE_DB_PATH", "cinematch.db")
-    # Use the SQLite schema file
     sql_path = os.path.join(BASE_DIR, "schema_sqlite.sql")
     with open(sql_path, "r") as f:
         sql = f.read()
@@ -24,7 +23,23 @@ def init_db():
     conn.close()
 
 
+def seed_if_empty():
+    """Seed movies from TMDB + JustWatch if the Movies table is empty."""
+    import sqlite3
+    db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+    conn    = sqlite3.connect(db_path)
+    count   = conn.execute("SELECT COUNT(*) FROM Movies").fetchone()[0]
+    conn.close()
+    if count == 0:
+        print("[app] Movies table is empty — starting seed...")
+        from seed import run
+        run()
+    else:
+        print(f"[app] Movies table has {count} rows — skipping seed")
+
+
 init_db()
+seed_if_empty()
 
 from auth            import auth_bp
 from movies          import movies_bp
