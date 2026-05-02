@@ -56,8 +56,10 @@ from cineblend       import cineblend_bp
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev_secret_key")
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"]   = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_NAME"]     = "cinematch_session"
 
 CORS(app, supports_credentials=True, origins=["https://cinematch-x523.onrender.com"])
 

@@ -165,7 +165,7 @@
 <script>
     // If already logged in as admin, skip the login page
     (async function () {
-        const r = await fetch('https://cinematch-x523.onrender.com/api/admin/me', { credentials: 'include' });
+        const r = await fetch('/api/admin/me', { credentials: 'include' });
         const data = await r.json();
         if (data.logged_in) window.location.href = '/admin/dashboard';
     })();
@@ -183,7 +183,7 @@
         btn.textContent = 'Signing in…';
 
         try {
-            const res  = await fetch('https://cinematch-x523.onrender.com/api/admin/login', {
+            const res  = await fetch('/api/admin/login', {
                 method:      'POST',
                 credentials: 'include',
                 headers:     { 'Content-Type': 'application/json' },

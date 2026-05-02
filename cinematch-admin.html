@@ -462,12 +462,11 @@
         window.location.href = '/login';
     }
 
-    const BASE = 'https://cinematch-x523.onrender.com';
     async function api(url, method = 'GET', body = null) {
         try {
             const opts = { method, credentials: 'include', headers: { 'Content-Type': 'application/json' } };
             if (body) opts.body = JSON.stringify(body);
-            const res = await fetch(BASE + url, opts);
+            const res = await fetch(url, opts);
             return await res.json();
         } catch { return { success: false, message: 'Network error.' }; }
     }
