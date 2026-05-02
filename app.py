@@ -138,9 +138,17 @@ def setup_db():
 
 @app.route("/run-seed")
 def run_seed():
-    from seed import run
-    run()
-    return "Seeding complete!"
+    import requests, os
+    key = os.getenv("TMDB_API_KEY", "NOT SET")
+    try:
+        r = requests.get(
+            "https://api.themoviedb.org/3/movie/popular",
+            params={"api_key": key, "page": 1},
+            timeout=10
+        )
+        return f"TMDB key: {key[:8]}... | Status: {r.status_code} | Movies found: {len(r.json().get('results', []))}"
+    except Exception as e:
+        return f"TMDB key: {key[:8]}... | ERROR: {str(e)}"
 
 
 if __name__ == "__main__":
