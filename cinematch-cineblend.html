@@ -629,7 +629,8 @@
 <script>
     async function checkSession() {
         try {
-            const res = await fetch('/api/me', { credentials: 'include' });
+            const BACKEND = 'https://cinematch-x523.onrender.com/api';
+            const res = await fetch(`${BACKEND}/me`, { credentials: 'include' });
             const data = await res.json();
             if (!data.logged_in) window.location.href = '/login';
         } catch {
@@ -694,7 +695,7 @@
         document.getElementById('loadingScreen').style.display = 'block';
 
         try {
-            const res = await fetch('/api/cineblend', {
+            const res = await fetch('${BACKEND}/cineblend', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
