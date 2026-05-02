@@ -136,6 +136,12 @@ def setup_db():
     init_db()
     return "Database initialized successfully!"
 
+@app.route("/run-seed")
+def run_seed():
+    from seed import run
+    run()
+    return "Seeding complete!"
+
 
 if __name__ == "__main__":
     print("CineMatch backend running at http://localhost:5000")
