@@ -2,5 +2,5 @@ flask
 flask-cors
 bcrypt
 python-dotenv
-simplejustwatchapi2
 requests
+simple-justwatch-python-api
