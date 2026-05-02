@@ -5,6 +5,7 @@ Called from app.py on startup when the Movies table is empty.
 Converts fetch_movies_simple.py + justwatch_integration.py from
 SQL Server / pyodbc → SQLite.
 
+
 Requires:
   pip install requests simplejustwatchapi
   Env var: TMDB_API_KEY
