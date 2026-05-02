@@ -4,3 +4,4 @@ bcrypt
 python-dotenv
 requests
 simple-justwatch-python-api
+
