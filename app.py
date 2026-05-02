@@ -138,17 +138,17 @@ def setup_db():
 
 @app.route("/run-seed")
 def run_seed():
-    import requests, os
-    key = os.getenv("TMDB_API_KEY", "NOT SET")
     try:
-        r = requests.get(
-            "https://api.themoviedb.org/3/movie/popular",
-            params={"api_key": key, "page": 1},
-            timeout=10
-        )
-        return f"TMDB key: {key[:8]}... | Status: {r.status_code} | Movies found: {len(r.json().get('results', []))}"
+        from seed import run
+        run()
+        import sqlite3, os
+        db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
+        conn = sqlite3.connect(db_path)
+        count = conn.execute("SELECT COUNT(*) FROM Movies").fetchone()[0]
+        conn.close()
+        return f"Seeding done! Movies in DB: {count}"
     except Exception as e:
-        return f"TMDB key: {key[:8]}... | ERROR: {str(e)}"
+        return f"Error: {str(e)}"
 
 
 if __name__ == "__main__":
