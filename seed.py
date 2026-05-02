@@ -17,19 +17,17 @@ import time
 TMDB_BASE      = "https://api.themoviedb.org/3"
 TMDB_IMG_BASE  = "https://image.tmdb.org/t/p/w500"
 # Fetch from multiple TMDB endpoints for a diverse library
-# Each endpoint × PAGES_PER_ENDPOINT pages × 20 movies
-PAGES_PER_ENDPOINT = 10
+# Each endpoint × PAGES_PER_ENDPOINT pages × 20 movies = ~400 movies + genre top picks
+PAGES_PER_ENDPOINT = 5
 TMDB_ENDPOINTS = [
     "/movie/popular",
     "/movie/top_rated",
-    "/movie/now_playing",
-    "/movie/upcoming",
 ]
-# Also fetch by genre IDs for even more variety
+# Top genres for variety — 2 pages each = 20 movies per genre
 # TMDB genre IDs: 28=Action, 35=Comedy, 18=Drama, 27=Horror, 878=Sci-Fi,
 #                 53=Thriller, 10749=Romance, 16=Animation, 80=Crime, 99=Documentary
 TMDB_GENRE_IDS = [28, 35, 18, 27, 878, 53, 10749, 16, 80, 99]
-GENRE_PAGES = 3  # 3 pages per genre
+GENRE_PAGES = 2  # 2 pages per genre
 
 
 # ── TMDB helpers ──────────────────────────────────────────────────────────────
@@ -193,6 +191,7 @@ def insert_movie(conn: sqlite3.Connection, detail: dict) -> int | None:
         )
     )
     return cur.lastrowid
+
 
 def link_genres(conn: sqlite3.Connection, movie_id: int, tmdb_genres: list):
     for g in tmdb_genres:
