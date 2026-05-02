@@ -128,7 +128,7 @@ def list_all_movies():
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
+                   PosterURL, TrailerURL, Director, "Cast",
                    AverageRating, TotalRatings, Genres, Platforms, IsApproved
             FROM   VW_MoviesComplete
             ORDER  BY MovieID DESC
@@ -196,7 +196,7 @@ def add_movie():
             """
             INSERT INTO Movies
                 (Title, ReleaseYear, Runtime, Description,
-                 PosterURL, TrailerURL, Director, Cast, IsApproved)
+                 PosterURL, TrailerURL, Director, "Cast", IsApproved)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
             """,
             (
