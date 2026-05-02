@@ -55,36 +55,48 @@ def extract_director(credits: dict) -> str:
     return ""
 
 
-# ── JustWatch helper ──────────────────────────────────────────────────────────
+# ── Streaming platforms via TMDB watch/providers ──────────────────────────────
 
-def get_streaming_platforms(title: str, year: int) -> list:
+# Maps TMDB provider_name → the exact name your browse filter checkboxes use
+PROVIDER_NAME_MAP = {
+    "netflix":                   "Netflix",
+    "amazon prime video":        "Prime Video",
+    "amazon prime video with ads": "Prime Video",
+    "prime video":               "Prime Video",
+    "max":                       "HBO Max",
+    "hbo max":                   "HBO Max",
+    "disney plus":               "Disney+",
+    "disney+":                   "Disney+",
+    "hulu":                      "Hulu",
+    "apple tv plus":             "Apple TV+",
+    "apple tv+":                 "Apple TV+",
+    "paramount plus":            "Paramount+",
+    "paramount+":                "Paramount+",
+    "peacock":                   "Peacock",
+    "peacock premium":           "Peacock",
+}
+
+def get_streaming_platforms(tmdb_id: int, api_key: str) -> list:
     """
-    Return list of streaming platform names for a movie via simplejustwatchapi.
-    Falls back to empty list on any error.
+    Return list of normalised streaming platform names for a movie
+    using TMDB's /watch/providers endpoint (flatrate = subscription streaming).
     """
     try:
-        from simplejustwatchapi.justwatch import search as jw_search
-        results = jw_search(title, "US", "en", 1, True)
-        if not results:
-            return []
-        # Pick best match: same title, close year
-        for item in results:
-            item_title = getattr(item, "title", "") or ""
-            item_year  = getattr(item, "release_year", 0) or 0
-            if item_title.lower() == title.lower() and abs(item_year - (year or 0)) <= 1:
-                offers = getattr(item, "offers", []) or []
-                platforms = []
-                seen = set()
-                for offer in offers:
-                    provider = getattr(offer, "package", None)
-                    name = getattr(provider, "clear_name", None) if provider else None
-                    if name and name not in seen:
-                        platforms.append(name)
-                        seen.add(name)
-                return platforms[:5]
-        return []
+        data = tmdb_get(f"/movie/{tmdb_id}/watch/providers", api_key)
+        us   = data.get("results", {}).get("US", {})
+        # flatrate = subscription (Netflix, Prime, etc.)
+        providers = us.get("flatrate", [])
+        platforms = []
+        seen = set()
+        for p in providers:
+            raw  = (p.get("provider_name") or "").strip().lower()
+            name = PROVIDER_NAME_MAP.get(raw, p.get("provider_name", "").strip())
+            if name and name not in seen:
+                platforms.append(name)
+                seen.add(name)
+        return platforms[:5]
     except Exception as e:
-        print(f"[seed][JustWatch] error for '{title}': {e}")
+        print(f"[seed][providers] error for tmdb_id={tmdb_id}: {e}")
         return []
 
 
@@ -256,7 +268,7 @@ def run():
                     except ValueError:
                         pass
 
-                platforms = get_streaming_platforms(title, release_year or 0)
+                platforms = get_streaming_platforms(tmdb_id, TMDB_API_KEY)
                 if platforms:
                     link_platforms(conn, movie_id, platforms)
 
