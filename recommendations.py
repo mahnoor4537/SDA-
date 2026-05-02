@@ -99,7 +99,7 @@ def get_recommendations():
             cursor.execute(
                 """
                 SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                       PosterURL, TrailerURL, Director, Cast,
+                       PosterURL, TrailerURL, Director, "Cast",
                        AverageRating, TotalRatings, Genres, Platforms
                 FROM   VW_MoviesComplete
                 WHERE  IsApproved = 1
@@ -135,7 +135,7 @@ def get_recommendations():
         cursor.execute(
             """
             SELECT MovieID, Title, ReleaseYear, Runtime, Description,
-                   PosterURL, TrailerURL, Director, Cast,
+                   PosterURL, TrailerURL, Director, "Cast",
                    AverageRating, TotalRatings, Genres, Platforms
             FROM   VW_MoviesComplete
             WHERE  IsApproved = 1
