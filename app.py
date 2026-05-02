@@ -155,18 +155,21 @@ def run_seed():
 def create_admin():
     import sqlite3, bcrypt, os
     db_path = os.getenv("SQLITE_DB_PATH", "cinematch.db")
-    password_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt()).decode("utf-8")
+    password = "Admin1234"
+    password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     conn = sqlite3.connect(db_path)
     try:
         conn.execute(
-            """INSERT INTO Users (Username, Email, PasswordHash, FullName, Role, IsActive)
+            """INSERT OR REPLACE INTO Users (Username, Email, PasswordHash, FullName, Role, IsActive)
                VALUES ('admin', 'admin@cinematch.com', ?, 'Admin', 'Admin', 1)""",
             (password_hash,)
         )
         conn.commit()
-        return "Admin created! Username: admin | Password: admin123"
+        # Verify it was inserted correctly
+        row = conn.execute("SELECT UserID, Role FROM Users WHERE Username = 'admin'").fetchone()
+        return f"Admin created! ID: {row[0]}, Role: {row[1]} — Login with admin / Admin1234"
     except Exception as e:
-        return f"Error (already exists?): {str(e)}"
+        return f"Error: {str(e)}"
     finally:
         conn.close()
 if __name__ == "__main__":
